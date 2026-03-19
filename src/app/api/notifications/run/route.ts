@@ -3,6 +3,8 @@ import { pool, type EventType } from "@/lib/db";
 import { differenceInMinutes } from "date-fns";
 import { sendSlackMessage } from "@/lib/slack";
 
+export const dynamic = "force-dynamic";
+
 // This route is a simple "worker" that you can trigger on a schedule.
 // For example, you can call it every minute using Windows Task Scheduler or a cron job.
 // It will:
