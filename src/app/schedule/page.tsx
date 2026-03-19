@@ -102,10 +102,24 @@ export default function SchedulePage() {
 
     try {
       setIsSubmitting(true);
+      // `datetime-local` has no timezone. Convert to an absolute UTC timestamp
+      // so the server (Railway timezone) stores the correct instant.
+      const scheduledAtDate = new Date(scheduledAt);
+      if (Number.isNaN(scheduledAtDate.getTime())) {
+        setError("Invalid date and time.");
+        return;
+      }
+      const scheduledAtISO = scheduledAtDate.toISOString();
+
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, eventType, scheduledAt }),
+        body: JSON.stringify({
+          title,
+          description,
+          eventType,
+          scheduledAt: scheduledAtISO,
+        }),
       });
 
       if (!res.ok) throw new Error("Failed to create event");
@@ -156,11 +170,17 @@ export default function SchedulePage() {
     setEditingId(event.id);
     setTitle(event.title);
     setDescription(event.description ?? "");
+
+    // Convert ISO timestamp to `datetime-local` value (no timezone part).
+    // We build the value using the browser local time to avoid shifting.
     const dt = new Date(event.scheduled_at);
-    const local = new Date(
-      dt.getTime() - dt.getTimezoneOffset() * 60000
-    ).toISOString();
-    setScheduledAt(local.slice(0, 16));
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    const hh = String(dt.getHours()).padStart(2, "0");
+    const min = String(dt.getMinutes()).padStart(2, "0");
+    setScheduledAt(`${yyyy}-${mm}-${dd}T${hh}:${min}`);
+
     setEventType(event.event_type);
   }
 
@@ -187,6 +207,13 @@ export default function SchedulePage() {
 
     try {
       setIsSubmitting(true);
+      const scheduledAtDate = new Date(scheduledAt);
+      if (Number.isNaN(scheduledAtDate.getTime())) {
+        setError("Invalid date and time.");
+        return;
+      }
+      const scheduledAtISO = scheduledAtDate.toISOString();
+
       const res = await fetch(`/api/events/${editingId}`, {
         method: "PUT",
         headers: {
@@ -196,7 +223,7 @@ export default function SchedulePage() {
           title,
           description,
           eventType,
-          scheduledAt,
+          scheduledAt: scheduledAtISO,
         }),
       });
       if (!res.ok) throw new Error("Failed to update event");

@@ -63,6 +63,8 @@ export async function POST(request: Request) {
 
   const when = scheduledAt.toLocaleString();
 
+  const insertedId = result.rows[0].id as number;
+
   await sendSlackMessage(
     `Saved: ${prettyType} scheduled at ${when}: ${title}`,
     [
@@ -105,6 +107,18 @@ export async function POST(request: Request) {
           {
             type: "mrkdwn",
             text: "Created via *NotifyFlow* Kanban board",
+          },
+        ],
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Mark as done" },
+            style: "primary",
+            action_id: "mark_done",
+            value: String(insertedId),
           },
         ],
       },
