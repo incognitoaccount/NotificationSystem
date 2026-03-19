@@ -88,7 +88,10 @@ export default function SchedulePage() {
 
   useEffect(() => {
     loadEvents();
-    const interval = setInterval(loadEvents, 60000);
+    // Polling keeps the UI in sync after Slack button clicks.
+    // When a user clicks "Mark as done" in Slack, we set `events.completed = true`
+    // on the backend; the schedule page needs to refresh to reflect that change.
+    const interval = setInterval(loadEvents, 5000);
     return () => clearInterval(interval);
   }, []);
 
