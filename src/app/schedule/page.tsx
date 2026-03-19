@@ -28,6 +28,7 @@ interface Event {
   description: string | null;
   event_type: EventType;
   scheduled_at: string;
+  completed: boolean;
 }
 
 const columnConfig: Record<
@@ -445,7 +446,9 @@ export default function SchedulePage() {
                             <div
                               key={event.id}
                               className={`group relative bg-white border rounded-2xl p-4 transition-all hover:shadow-md hover:-translate-y-0.5 ${
-                                past
+                              event.completed
+                                ? "border-emerald-200 bg-emerald-50/20 opacity-95"
+                                : past
                                   ? "border-rose-300 opacity-80 bg-rose-50/30"
                                   : "border-slate-200 hover:border-slate-300"
                               }`}
@@ -480,7 +483,11 @@ export default function SchedulePage() {
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
-                                  {past ? (
+                                  {event.completed ? (
+                                    <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider border border-emerald-200">
+                                      Done
+                                    </span>
+                                  ) : past ? (
                                     <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-wider border border-rose-200">
                                       Missed
                                     </span>

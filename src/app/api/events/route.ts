@@ -11,7 +11,7 @@ export async function GET() {
   // We fetch all events ordered by scheduled_at so that the UI
   // can easily group them on the Kanban board.
   const result = await pool.query(
-    "SELECT id, title, description, event_type, scheduled_at, created_at, updated_at FROM events ORDER BY scheduled_at ASC"
+    "SELECT id, title, description, event_type, scheduled_at, completed, created_at, updated_at FROM events ORDER BY scheduled_at ASC"
   );
 
   return NextResponse.json(result.rows);
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   const result = await pool.query(
     `INSERT INTO events (title, description, event_type, scheduled_at)
      VALUES ($1, $2, $3, $4)
-     RETURNING id, title, description, event_type, scheduled_at, created_at, updated_at`,
+     RETURNING id, title, description, event_type, scheduled_at, completed, created_at, updated_at`,
     [title, description, eventType, scheduledAt]
   );
 

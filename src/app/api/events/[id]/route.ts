@@ -48,7 +48,7 @@ export async function PUT(request: Request, { params }: Params) {
          completed = FALSE,
          updated_at = NOW()
      WHERE id = $5
-     RETURNING id, title, description, event_type, scheduled_at, created_at, updated_at`,
+     RETURNING id, title, description, event_type, scheduled_at, completed, created_at, updated_at`,
     [title, description, eventType, scheduledAt, id]
   );
 
