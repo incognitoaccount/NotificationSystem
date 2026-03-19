@@ -84,7 +84,7 @@ export async function GET() {
   const now = new Date();
 
   const result = await pool.query(
-    "SELECT id, title, description, event_type, scheduled_at FROM events"
+    "SELECT id, title, description, event_type, scheduled_at FROM events WHERE completed = FALSE"
   );
 
   const rows = result.rows as {
@@ -102,13 +102,6 @@ export async function GET() {
 
     const minutesDiff = differenceInMinutes(scheduledAt, now);
 
-    const baseTitle =
-      row.event_type === "deadline"
-        ? "Deadline"
-        : row.event_type === "meeting"
-        ? "Meeting"
-        : "Business Trip";
-
     // BEFORE reminders
     if (isWithinMinuteWindow(minutesDiff, 72 * 60)) {
       if (await markIfNotSent(row.id, "before_3d")) {
@@ -119,7 +112,12 @@ export async function GET() {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*${baseTitle} in 3 days*`,
+                text: buildReminderMessage(
+                  row.event_type,
+                  row.title,
+                  scheduledAt,
+                  minutesDiff
+                ),
               },
             },
             {
@@ -132,6 +130,18 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
+                },
+              ],
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Mark as done" },
+                  style: "primary",
+                  action_id: "mark_done",
+                  value: String(row.id),
                 },
               ],
             },
@@ -151,7 +161,12 @@ export async function GET() {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*${baseTitle} in 24 hours*`,
+                text: buildReminderMessage(
+                  row.event_type,
+                  row.title,
+                  scheduledAt,
+                  minutesDiff
+                ),
               },
             },
             {
@@ -164,6 +179,18 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
+                },
+              ],
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Mark as done" },
+                  style: "primary",
+                  action_id: "mark_done",
+                  value: String(row.id),
                 },
               ],
             },
@@ -183,7 +210,12 @@ export async function GET() {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*${baseTitle} in 3 hours*`,
+                text: buildReminderMessage(
+                  row.event_type,
+                  row.title,
+                  scheduledAt,
+                  minutesDiff
+                ),
               },
             },
             {
@@ -196,6 +228,18 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
+                },
+              ],
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Mark as done" },
+                  style: "primary",
+                  action_id: "mark_done",
+                  value: String(row.id),
                 },
               ],
             },
@@ -215,7 +259,12 @@ export async function GET() {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*${baseTitle} in 15 minutes*`,
+                text: buildReminderMessage(
+                  row.event_type,
+                  row.title,
+                  scheduledAt,
+                  minutesDiff
+                ),
               },
             },
             {
@@ -228,6 +277,18 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
+                },
+              ],
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Mark as done" },
+                  style: "primary",
+                  action_id: "mark_done",
+                  value: String(row.id),
                 },
               ],
             },
@@ -248,7 +309,12 @@ export async function GET() {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*It is time for your ${baseTitle.toLowerCase()}*`,
+                text: buildReminderMessage(
+                  row.event_type,
+                  row.title,
+                  scheduledAt,
+                  0
+                ),
               },
             },
             {
@@ -261,6 +327,18 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
+                },
+              ],
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Mark as done" },
+                  style: "primary",
+                  action_id: "mark_done",
+                  value: String(row.id),
                 },
               ],
             },
@@ -281,7 +359,7 @@ export async function GET() {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*Urgent: you missed this ${baseTitle.toLowerCase()} 10 minutes ago*`,
+                text: buildUrgentMessage(row.event_type, row.title, scheduledAt),
               },
             },
             {
@@ -294,6 +372,18 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*Scheduled:*\n${eventDateString(scheduledAt)}`,
+                },
+              ],
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Mark as done" },
+                  style: "primary",
+                  action_id: "mark_done",
+                  value: String(row.id),
                 },
               ],
             },
@@ -313,7 +403,7 @@ export async function GET() {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*Urgent: you missed this ${baseTitle.toLowerCase()} 1 hour ago*`,
+                text: buildUrgentMessage(row.event_type, row.title, scheduledAt),
               },
             },
             {
@@ -326,6 +416,18 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*Scheduled:*\n${eventDateString(scheduledAt)}`,
+                },
+              ],
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Mark as done" },
+                  style: "primary",
+                  action_id: "mark_done",
+                  value: String(row.id),
                 },
               ],
             },
@@ -345,7 +447,7 @@ export async function GET() {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*Urgent: you missed this ${baseTitle.toLowerCase()} 24 hours ago*`,
+                text: buildUrgentMessage(row.event_type, row.title, scheduledAt),
               },
             },
             {
@@ -358,6 +460,18 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*Scheduled:*\n${eventDateString(scheduledAt)}`,
+                },
+              ],
+            },
+            {
+              type: "actions",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "Mark as done" },
+                  style: "primary",
+                  action_id: "mark_done",
+                  value: String(row.id),
                 },
               ],
             },

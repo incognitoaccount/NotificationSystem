@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS events (
   description TEXT,
   event_type TEXT NOT NULL CHECK (event_type IN ('deadline', 'meeting', 'business_trip')),
   scheduled_at TIMESTAMPTZ NOT NULL,
+  completed BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
