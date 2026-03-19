@@ -43,9 +43,20 @@ async function verifySlackRequest(request: Request, rawBody: string) {
 export async function POST(request: Request) {
   const rawBody = await request.text();
 
+  const signatureHeader = request.headers.get("x-slack-signature");
+  const timestampHeader = request.headers.get("x-slack-request-timestamp");
+
   const ok = await verifySlackRequest(request, rawBody);
   if (!ok) {
-    return NextResponse.json({ ok: false }, { status: 401 });
+    console.log("[Slack Actions] signature verification failed", {
+      hasSigningSecret: Boolean(signingSecret),
+      hasSignatureHeader: Boolean(signatureHeader),
+      hasTimestampHeader: Boolean(timestampHeader),
+    });
+    return NextResponse.json(
+      { ok: false, error: "Invalid Slack signature" },
+      { status: 401 }
+    );
   }
 
   // Slack sends: content-type application/x-www-form-urlencoded
@@ -62,23 +73,34 @@ export async function POST(request: Request) {
 
   const action = payload.actions?.[0];
   if (!action) {
+    console.log("[Slack Actions] Missing action in payload", payload);
     return NextResponse.json({ ok: false, error: "Missing action" }, { status: 400 });
   }
 
   if (action.action_id !== "mark_done") {
+    console.log("[Slack Actions] Unknown action_id", action.action_id);
     return NextResponse.json({ ok: false, error: "Unknown action" }, { status: 400 });
   }
 
   const eventId = Number(action.value);
   if (!Number.isInteger(eventId)) {
+    console.log("[Slack Actions] Invalid event id", { value: action.value });
     return NextResponse.json({ ok: false, error: "Invalid event id" }, { status: 400 });
   }
 
-  await pool.query("UPDATE events SET completed = TRUE WHERE id = $1", [eventId]);
+  const updateRes = await pool.query(
+    "UPDATE events SET completed = TRUE WHERE id = $1",
+    [eventId]
+  );
+  console.log("[Slack Actions] Mark done result", {
+    eventId,
+    updatedRows: updateRes.rowCount,
+  });
 
   return NextResponse.json({
     ok: true,
     text: "Marked as done.",
+    response_type: "ephemeral",
   });
 }
 

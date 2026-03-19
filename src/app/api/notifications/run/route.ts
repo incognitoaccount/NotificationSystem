@@ -84,7 +84,7 @@ export async function GET() {
   const now = new Date();
 
   const result = await pool.query(
-    "SELECT id, title, description, event_type, scheduled_at FROM events WHERE completed = FALSE"
+    "SELECT id, title, description, event_type, scheduled_at, completed FROM events WHERE completed = FALSE"
   );
 
   const rows = result.rows as {
@@ -93,6 +93,7 @@ export async function GET() {
     description: string | null;
     event_type: EventType;
     scheduled_at: Date;
+    completed: boolean;
   }[];
 
   let sentCount = 0;
@@ -101,6 +102,8 @@ export async function GET() {
     const scheduledAt = new Date(row.scheduled_at);
 
     const minutesDiff = differenceInMinutes(scheduledAt, now);
+
+    const showDoneButton = row.completed === false;
 
     // BEFORE reminders
     if (isWithinMinuteWindow(minutesDiff, 72 * 60)) {
@@ -133,18 +136,22 @@ export async function GET() {
                 },
               ],
             },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "Mark as done" },
-                  style: "primary",
-                  action_id: "mark_done",
-                  value: String(row.id),
-                },
-              ],
-            },
+            ...(showDoneButton
+              ? [
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Mark as done" },
+                        style: "primary",
+                        action_id: "mark_done",
+                        value: String(row.id),
+                      },
+                    ],
+                  },
+                ]
+              : []),
           ]
         );
         sentCount += 1;
@@ -182,18 +189,22 @@ export async function GET() {
                 },
               ],
             },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "Mark as done" },
-                  style: "primary",
-                  action_id: "mark_done",
-                  value: String(row.id),
-                },
-              ],
-            },
+            ...(showDoneButton
+              ? [
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Mark as done" },
+                        style: "primary",
+                        action_id: "mark_done",
+                        value: String(row.id),
+                      },
+                    ],
+                  },
+                ]
+              : []),
           ]
         );
         sentCount += 1;
@@ -231,18 +242,22 @@ export async function GET() {
                 },
               ],
             },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "Mark as done" },
-                  style: "primary",
-                  action_id: "mark_done",
-                  value: String(row.id),
-                },
-              ],
-            },
+            ...(showDoneButton
+              ? [
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Mark as done" },
+                        style: "primary",
+                        action_id: "mark_done",
+                        value: String(row.id),
+                      },
+                    ],
+                  },
+                ]
+              : []),
           ]
         );
         sentCount += 1;
@@ -280,18 +295,22 @@ export async function GET() {
                 },
               ],
             },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "Mark as done" },
-                  style: "primary",
-                  action_id: "mark_done",
-                  value: String(row.id),
-                },
-              ],
-            },
+            ...(showDoneButton
+              ? [
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Mark as done" },
+                        style: "primary",
+                        action_id: "mark_done",
+                        value: String(row.id),
+                      },
+                    ],
+                  },
+                ]
+              : []),
           ]
         );
         sentCount += 1;
@@ -330,18 +349,22 @@ export async function GET() {
                 },
               ],
             },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "Mark as done" },
-                  style: "primary",
-                  action_id: "mark_done",
-                  value: String(row.id),
-                },
-              ],
-            },
+            ...(showDoneButton
+              ? [
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Mark as done" },
+                        style: "primary",
+                        action_id: "mark_done",
+                        value: String(row.id),
+                      },
+                    ],
+                  },
+                ]
+              : []),
           ]
         );
         sentCount += 1;
@@ -375,18 +398,22 @@ export async function GET() {
                 },
               ],
             },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "Mark as done" },
-                  style: "primary",
-                  action_id: "mark_done",
-                  value: String(row.id),
-                },
-              ],
-            },
+            ...(showDoneButton
+              ? [
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Mark as done" },
+                        style: "primary",
+                        action_id: "mark_done",
+                        value: String(row.id),
+                      },
+                    ],
+                  },
+                ]
+              : []),
           ]
         );
         sentCount += 1;
@@ -419,18 +446,22 @@ export async function GET() {
                 },
               ],
             },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "Mark as done" },
-                  style: "primary",
-                  action_id: "mark_done",
-                  value: String(row.id),
-                },
-              ],
-            },
+            ...(showDoneButton
+              ? [
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Mark as done" },
+                        style: "primary",
+                        action_id: "mark_done",
+                        value: String(row.id),
+                      },
+                    ],
+                  },
+                ]
+              : []),
           ]
         );
         sentCount += 1;
@@ -463,18 +494,22 @@ export async function GET() {
                 },
               ],
             },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: "Mark as done" },
-                  style: "primary",
-                  action_id: "mark_done",
-                  value: String(row.id),
-                },
-              ],
-            },
+            ...(showDoneButton
+              ? [
+                  {
+                    type: "actions",
+                    elements: [
+                      {
+                        type: "button",
+                        text: { type: "plain_text", text: "Mark as done" },
+                        style: "primary",
+                        action_id: "mark_done",
+                        value: String(row.id),
+                      },
+                    ],
+                  },
+                ]
+              : []),
           ]
         );
         sentCount += 1;
