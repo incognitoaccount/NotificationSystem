@@ -516,22 +516,29 @@ export default function SchedulePage() {
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
                                   <div className="flex items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => startEdit(event)}
-                                      className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-                                    >
-                                      <Pencil className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setConfirmDeleteId(event.id)
-                                      }
-                                      className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 p-1 text-rose-600 hover:bg-rose-100 hover:text-rose-700"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                    {user &&
+                                      event.created_by === user.username && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              startEdit(event)
+                                            }
+                                            className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                                          >
+                                            <Pencil className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setConfirmDeleteId(event.id)
+                                            }
+                                            className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 p-1 text-rose-600 hover:bg-rose-100 hover:text-rose-700"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
                                   </div>
                                   {event.completed ? (
                                     <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider border border-emerald-200">

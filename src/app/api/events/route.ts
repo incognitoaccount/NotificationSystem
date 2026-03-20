@@ -24,9 +24,8 @@ export async function GET() {
        u.username AS created_by
      FROM events e
      LEFT JOIN users u ON u.id = e.user_id
-     WHERE e.user_id = $1
      ORDER BY e.scheduled_at ASC`,
-    [user.id]
+    []
   );
 
   return NextResponse.json(result.rows);
