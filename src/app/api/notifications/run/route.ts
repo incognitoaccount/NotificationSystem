@@ -521,3 +521,9 @@ export async function GET() {
   return NextResponse.json({ ok: true, sentCount });
 }
 
+// Some scheduler templates call endpoints using POST.
+// We support POST as an alias so cron jobs don't fail with 405.
+export async function POST() {
+  return GET();
+}
+
