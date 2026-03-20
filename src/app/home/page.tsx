@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { 
   BellRing, 
   ArrowRight, 
@@ -16,9 +17,25 @@ import {
 export default function HomeLanding() {
   const [mounted, setMounted] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
+  const [user, setUser] = useState<{ id: number; username: string } | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     setMounted(true);
+
+    async function loadMe() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (!res.ok) return;
+        const data = await res.json();
+        setUser(data.user ?? null);
+      } catch {
+        // If /api/auth/me fails, we just keep the header generic.
+      }
+    }
+
+    loadMe();
+
     const interval = setInterval(() => {
       setActiveStep((prev) => (prev + 1) % 3);
     }, 3000);
@@ -26,6 +43,15 @@ export default function HomeLanding() {
   }, []);
 
   if (!mounted) return null;
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setUser(null);
+      router.push("/login");
+    }
+  }
 
   return (
     <main className="min-h-screen bg-white text-slate-800 font-sans selection:bg-sky-200 overflow-hidden relative">
@@ -51,6 +77,23 @@ export default function HomeLanding() {
           </div>
 
           <nav className="flex items-center gap-4">
+            {user ? (
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+              >
+                Logout ({user.username})
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all"
+              >
+                Sign in
+              </Link>
+            )}
+
             <Link
               href="/schedule"
               className="group inline-flex items-center justify-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-slate-800 hover:shadow-md hover:shadow-slate-200 active:scale-95"

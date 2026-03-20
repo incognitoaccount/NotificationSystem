@@ -100,8 +100,34 @@ async function markIfNotSent(eventId: number, kind: ReminderKind) {
 export async function GET() {
   const now = new Date();
 
+  // Ensure auth schema exists.
+  // This worker can run even before a user logs in.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
+  `);
+
   const result = await pool.query(
-    "SELECT id, title, description, event_type, scheduled_at, completed FROM events WHERE completed = FALSE"
+    `SELECT
+      e.id,
+      e.title,
+      e.description,
+      e.event_type,
+      e.scheduled_at,
+      e.completed,
+      u.username AS created_by
+     FROM events e
+     LEFT JOIN users u ON u.id = e.user_id
+     WHERE e.completed = FALSE`
   );
 
   const rows = result.rows as {
@@ -111,6 +137,7 @@ export async function GET() {
     event_type: EventType;
     scheduled_at: Date;
     completed: boolean;
+    created_by: string | null;
   }[];
 
   let sentCount = 0;
@@ -121,6 +148,7 @@ export async function GET() {
     const minutesDiff = differenceInMinutes(scheduledAt, now);
 
     const showDoneButton = row.completed === false;
+    const createdBy = row.created_by ?? "unknown";
 
     // BEFORE reminders
     if (isWithinMinuteWindow(minutesDiff, 72 * 60)) {
@@ -150,6 +178,10 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
+                },
+                {
+                  type: "mrkdwn",
+                  text: `*Created by:*\n${createdBy}`,
                 },
               ],
             },
@@ -204,6 +236,10 @@ export async function GET() {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
                 },
+                {
+                  type: "mrkdwn",
+                  text: `*Created by:*\n${createdBy}`,
+                },
               ],
             },
             ...(showDoneButton
@@ -257,6 +293,10 @@ export async function GET() {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
                 },
+                {
+                  type: "mrkdwn",
+                  text: `*Created by:*\n${createdBy}`,
+                },
               ],
             },
             ...(showDoneButton
@@ -309,6 +349,10 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
+                },
+                {
+                  type: "mrkdwn",
+                  text: `*Created by:*\n${createdBy}`,
                 },
               ],
             },
@@ -364,6 +408,10 @@ export async function GET() {
                   type: "mrkdwn",
                   text: `*When:*\n${eventDateString(scheduledAt)}`,
                 },
+                {
+                  type: "mrkdwn",
+                  text: `*Created by:*\n${createdBy}`,
+                },
               ],
             },
             ...(showDoneButton
@@ -413,6 +461,10 @@ export async function GET() {
                   type: "mrkdwn",
                   text: `*Scheduled:*\n${eventDateString(scheduledAt)}`,
                 },
+                {
+                  type: "mrkdwn",
+                  text: `*Created by:*\n${createdBy}`,
+                },
               ],
             },
             ...(showDoneButton
@@ -461,6 +513,10 @@ export async function GET() {
                   type: "mrkdwn",
                   text: `*Scheduled:*\n${eventDateString(scheduledAt)}`,
                 },
+                {
+                  type: "mrkdwn",
+                  text: `*Created by:*\n${createdBy}`,
+                },
               ],
             },
             ...(showDoneButton
@@ -508,6 +564,10 @@ export async function GET() {
                 {
                   type: "mrkdwn",
                   text: `*Scheduled:*\n${eventDateString(scheduledAt)}`,
+                },
+                {
+                  type: "mrkdwn",
+                  text: `*Created by:*\n${createdBy}`,
                 },
               ],
             },

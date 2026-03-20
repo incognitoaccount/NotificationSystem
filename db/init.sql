@@ -1,6 +1,13 @@
 -- Simple schema for the notification system.
 -- Run this file against your PostgreSQL database once before using the app.
 
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id SERIAL PRIMARY KEY,
   title TEXT NOT NULL,
@@ -8,6 +15,7 @@ CREATE TABLE IF NOT EXISTS events (
   event_type TEXT NOT NULL CHECK (event_type IN ('deadline', 'meeting', 'business_trip')),
   scheduled_at TIMESTAMPTZ NOT NULL,
   completed BOOLEAN NOT NULL DEFAULT FALSE,
+  user_id INTEGER REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

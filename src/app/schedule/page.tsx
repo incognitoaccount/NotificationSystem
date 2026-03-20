@@ -5,6 +5,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import {
   BellRing,
@@ -29,6 +30,7 @@ interface Event {
   event_type: EventType;
   scheduled_at: string;
   completed: boolean;
+  created_by: string | null;
 }
 
 const columnConfig: Record<
@@ -59,6 +61,7 @@ const columnConfig: Record<
 };
 
 export default function SchedulePage() {
+  const router = useRouter();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -66,6 +69,8 @@ export default function SchedulePage() {
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+  const [user, setUser] = useState<{ id: number; username: string } | null>(null);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -76,6 +81,10 @@ export default function SchedulePage() {
     try {
       setLoading(true);
       const res = await fetch("/api/events");
+      if (res.status === 401) {
+        router.push("/login");
+        return;
+      }
       if (!res.ok) throw new Error("Failed to load events");
       const data: Event[] = await res.json();
       setEvents(data);
@@ -86,7 +95,21 @@ export default function SchedulePage() {
     }
   }
 
+  // Polls the backend every few seconds so the UI reflects Slack "Mark as done".
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
+    async function loadMe() {
+      const res = await fetch("/api/auth/me");
+      if (res.status === 401) {
+        router.push("/login");
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json();
+      setUser(data.user);
+    }
+
+    loadMe();
     loadEvents();
     // Polling keeps the UI in sync after Slack button clicks.
     // When a user clicks "Mark as done" in Slack, we set `events.completed = true`
@@ -94,6 +117,16 @@ export default function SchedulePage() {
     const interval = setInterval(loadEvents, 5000);
     return () => clearInterval(interval);
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setUser(null);
+      router.push("/login");
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -274,6 +307,15 @@ export default function SchedulePage() {
             >
               Back to Home
             </Link>
+            {user && (
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="px-3 py-1.5 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100"
+              >
+                Logout ({user.username})
+              </button>
+            )}
           </nav>
         </div>
       </header>
@@ -461,6 +503,11 @@ export default function SchedulePage() {
                                   <h4 className="font-semibold text-sm text-slate-900 line-clamp-2 leading-snug">
                                     {event.title}
                                   </h4>
+                                  {event.created_by && (
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                      Created by {event.created_by}
+                                    </p>
+                                  )}
                                   {event.description && (
                                     <p className="text-xs text-slate-600 mt-1 line-clamp-2 leading-relaxed">
                                       {event.description}
