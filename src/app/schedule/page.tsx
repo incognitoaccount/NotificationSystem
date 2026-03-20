@@ -4,7 +4,7 @@
 // It reuses the same implementation that originally lived at the root route.
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import {
@@ -71,6 +71,8 @@ export default function SchedulePage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const [user, setUser] = useState<{ id: number; username: string } | null>(null);
+  const hasLoadedOnceRef = useRef(false);
+  const isFetchInFlightRef = useRef(false);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -78,8 +80,14 @@ export default function SchedulePage() {
   const [scheduledAt, setScheduledAt] = useState("");
 
   async function loadEvents() {
+    // Prevent overlapping fetches when polling interval is shorter
+    // than the API response time.
+    if (isFetchInFlightRef.current) return;
+    isFetchInFlightRef.current = true;
+
+    const firstLoad = !hasLoadedOnceRef.current;
     try {
-      setLoading(true);
+      if (firstLoad) setLoading(true);
       const res = await fetch("/api/events");
       if (res.status === 401) {
         router.push("/login");
@@ -88,10 +96,12 @@ export default function SchedulePage() {
       if (!res.ok) throw new Error("Failed to load events");
       const data: Event[] = await res.json();
       setEvents(data);
+      hasLoadedOnceRef.current = true;
     } catch (e) {
       setError("Could not load events. Please try again.");
     } finally {
-      setLoading(false);
+      if (firstLoad) setLoading(false);
+      isFetchInFlightRef.current = false;
     }
   }
 
@@ -99,6 +109,7 @@ export default function SchedulePage() {
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     async function loadMe() {
+      // No loading spinner needed for auth checks.
       const res = await fetch("/api/auth/me");
       if (res.status === 401) {
         router.push("/login");
