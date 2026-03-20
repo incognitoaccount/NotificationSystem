@@ -33,21 +33,38 @@ function formatHoursLeft(diffMinutes: number) {
 }
 
 function eventDateString(date: Date) {
-  // Keep it readable in Slack across locales.
-  return date.toLocaleString();
+  // Slack messages are formatted using a fixed timezone so the time
+  // matches what the user sees on the website.
+  //
+  // The browser UI uses the user's local timezone, but the worker runs
+  // on the server (Railway), so without an explicit timezone Slack time
+  // can shift (common: UTC vs GMT+8).
+  const timeZone = process.env.SLACK_TIMEZONE || "Asia/Singapore";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
 }
 
 function buildReminderMessage(eventType: EventType, title: string, date: Date, diffMinutes: number) {
   const dateStr = eventDateString(date);
   const hoursLeft = formatHoursLeft(diffMinutes);
+  const minutesLeft = Math.max(0, diffMinutes);
+  const minutesExtra =
+    minutesLeft < 60 ? ` (${minutesLeft} minutes)` : "";
 
   if (eventType === "deadline") {
-    return `Reminder: You have a deadline on ${dateStr}. You have ${hoursLeft} hours left before deadline`;
+    return `Reminder: You have a deadline on ${dateStr}. You have ${hoursLeft} hours left before deadline${minutesExtra}`;
   }
   if (eventType === "meeting") {
-    return `Reminder: You have a meeting on ${dateStr}. You have ${hoursLeft} hours left before the meeting`;
+    return `Reminder: You have a meeting on ${dateStr}. You have ${hoursLeft} hours left before the meeting${minutesExtra}`;
   }
-  return `Reminder: You have a business trip on ${dateStr}. You have ${hoursLeft} hours left before the trip`;
+  return `Reminder: You have a business trip on ${dateStr}. You have ${hoursLeft} hours left before the trip${minutesExtra}`;
 }
 
 function buildUrgentMessage(eventType: EventType, title: string, date: Date) {

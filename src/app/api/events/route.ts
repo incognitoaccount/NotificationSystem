@@ -61,7 +61,16 @@ export async function POST(request: Request) {
       ? "Meeting"
       : "Business Trip";
 
-  const when = scheduledAt.toLocaleString();
+  const timeZone = process.env.SLACK_TIMEZONE || "Asia/Singapore";
+  const when = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(scheduledAt);
 
   const insertedId = result.rows[0].id as number;
 
