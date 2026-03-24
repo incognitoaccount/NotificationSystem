@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { pool } from "@/lib/db";
+import { sendSlackMessage } from "@/lib/slack";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +94,10 @@ export async function POST(request: Request) {
       updatedRows: updateRes.rowCount,
     });
 
+    const eventInfo = await pool.query("SELECT title FROM events WHERE id = $1", [eventId]);
+    const eventTitle = (eventInfo.rows[0]?.title as string | undefined) ?? `Event #${eventId}`;
+    await sendSlackMessage(`Action clicked: Mark as done for "${eventTitle}".`);
+
     return NextResponse.json({
       ok: true,
       text: "Marked as done.",
@@ -136,6 +141,12 @@ export async function POST(request: Request) {
         : action.action_id === "snooze_1h"
           ? "1 hour"
           : "tomorrow";
+
+    const eventInfo = await pool.query("SELECT title FROM events WHERE id = $1", [eventId]);
+    const eventTitle = (eventInfo.rows[0]?.title as string | undefined) ?? `Event #${eventId}`;
+    await sendSlackMessage(
+      `Action clicked: Snoozed "${eventTitle}" for ${humanLabel}.`
+    );
 
     return NextResponse.json({
       ok: true,
