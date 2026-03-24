@@ -168,6 +168,24 @@ export async function POST(request: Request) {
             action_id: "mark_done",
             value: String(insertedId),
           },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Snooze 10m" },
+            action_id: "snooze_10m",
+            value: String(insertedId),
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Snooze 1h" },
+            action_id: "snooze_1h",
+            value: String(insertedId),
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Snooze tomorrow" },
+            action_id: "snooze_tomorrow",
+            value: String(insertedId),
+          },
         ],
       },
     ]
