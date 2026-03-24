@@ -30,3 +30,13 @@ CREATE TABLE IF NOT EXISTS notifications_sent (
   UNIQUE (event_id, kind)
 );
 
+-- Stores temporary "snooze" requests from Slack buttons.
+-- Each row means: resend reminder for this event at remind_at.
+CREATE TABLE IF NOT EXISTS snoozed_notifications (
+  id SERIAL PRIMARY KEY,
+  event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  remind_at TIMESTAMPTZ NOT NULL,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+

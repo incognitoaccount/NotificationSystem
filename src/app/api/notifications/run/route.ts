@@ -19,6 +19,7 @@ type ReminderKind =
   | "before_24h"
   | "before_3h"
   | "before_15m"
+  | "before_10m"
   | "at_time"
   | "missed_10m"
   | "missed_1h"
@@ -97,11 +98,75 @@ async function markIfNotSent(eventId: number, kind: ReminderKind) {
   return result.rowCount === 1;
 }
 
+function buildActionBlock(eventId: number, showDoneButton: boolean) {
+  if (!showDoneButton) return null;
+
+  return {
+    type: "actions",
+    elements: [
+      {
+        type: "button",
+        text: { type: "plain_text", text: "Mark as done" },
+        style: "primary",
+        action_id: "mark_done",
+        value: String(eventId),
+      },
+      {
+        type: "button",
+        text: { type: "plain_text", text: "Snooze 10m" },
+        action_id: "snooze_10m",
+        value: String(eventId),
+      },
+      {
+        type: "button",
+        text: { type: "plain_text", text: "Snooze 1h" },
+        action_id: "snooze_1h",
+        value: String(eventId),
+      },
+      {
+        type: "button",
+        text: { type: "plain_text", text: "Snooze tomorrow" },
+        action_id: "snooze_tomorrow",
+        value: String(eventId),
+      },
+    ],
+  };
+}
+
+async function sendEventNotification(args: {
+  eventId: number;
+  title: string;
+  createdBy: string;
+  scheduledAt: Date;
+  messageText: string;
+  showDoneButton: boolean;
+  scheduleLabel: "When" | "Scheduled";
+}) {
+  const actions = buildActionBlock(args.eventId, args.showDoneButton);
+  await sendSlackMessage(args.messageText, [
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: args.messageText },
+    },
+    {
+      type: "section",
+      fields: [
+        { type: "mrkdwn", text: `*Title:*\n${args.title}` },
+        {
+          type: "mrkdwn",
+          text: `*${args.scheduleLabel}:*\n${eventDateString(args.scheduledAt)}`,
+        },
+        { type: "mrkdwn", text: `*Created by:*\n${args.createdBy}` },
+      ],
+    },
+    ...(actions ? [actions] : []),
+  ]);
+}
+
 export async function GET() {
   const now = new Date();
 
-  // Ensure auth schema exists.
-  // This worker can run even before a user logs in.
+  // Ensure auth + snooze schema exists.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -110,17 +175,79 @@ export async function GET() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
-
   await pool.query(`
     ALTER TABLE events
     ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS snoozed_notifications (
+      id SERIAL PRIMARY KEY,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      remind_at TIMESTAMPTZ NOT NULL,
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 
+  let sentCount = 0;
+
+  // 1) Send due snoozed reminders first.
+  const dueSnoozes = await pool.query(
+    `SELECT
+      s.id AS snooze_id,
+      e.id,
+      e.title,
+      e.event_type,
+      e.scheduled_at,
+      e.completed,
+      u.username AS created_by
+     FROM snoozed_notifications s
+     JOIN events e ON e.id = s.event_id
+     LEFT JOIN users u ON u.id = e.user_id
+     WHERE s.sent_at IS NULL
+       AND s.remind_at <= NOW()
+       AND e.completed = FALSE
+     ORDER BY s.remind_at ASC`
+  );
+
+  for (const row of dueSnoozes.rows as Array<{
+    snooze_id: number;
+    id: number;
+    title: string;
+    event_type: EventType;
+    scheduled_at: Date;
+    completed: boolean;
+    created_by: string | null;
+  }>) {
+    const scheduledAt = new Date(row.scheduled_at);
+    const minutesDiff = differenceInMinutes(scheduledAt, now);
+    const messageText =
+      minutesDiff >= 0
+        ? buildReminderMessage(row.event_type, row.title, scheduledAt, minutesDiff)
+        : buildUrgentMessage(row.event_type, row.title, scheduledAt);
+
+    await sendEventNotification({
+      eventId: row.id,
+      title: row.title,
+      createdBy: row.created_by ?? "unknown",
+      scheduledAt,
+      messageText,
+      showDoneButton: !row.completed,
+      scheduleLabel: minutesDiff >= 0 ? "When" : "Scheduled",
+    });
+
+    await pool.query(
+      "UPDATE snoozed_notifications SET sent_at = NOW() WHERE id = $1",
+      [row.snooze_id]
+    );
+    sentCount += 1;
+  }
+
+  // 2) Regular reminder pipeline.
   const result = await pool.query(
     `SELECT
       e.id,
       e.title,
-      e.description,
       e.event_type,
       e.scheduled_at,
       e.completed,
@@ -130,468 +257,85 @@ export async function GET() {
      WHERE e.completed = FALSE`
   );
 
-  const rows = result.rows as {
+  const beforeStages: Array<{ kind: ReminderKind; targetMinutes: number }> = [
+    { kind: "before_3d", targetMinutes: 72 * 60 },
+    { kind: "before_24h", targetMinutes: 24 * 60 },
+    { kind: "before_3h", targetMinutes: 3 * 60 },
+    { kind: "before_15m", targetMinutes: 15 },
+    // New early reminder explicitly requested by the reviewer.
+    { kind: "before_10m", targetMinutes: 10 },
+    { kind: "at_time", targetMinutes: 0 },
+  ];
+
+  const missedStages: Array<{ kind: ReminderKind; targetMinutes: number }> = [
+    { kind: "missed_10m", targetMinutes: -10 },
+    { kind: "missed_1h", targetMinutes: -60 },
+    { kind: "missed_24h", targetMinutes: -24 * 60 },
+  ];
+
+  for (const row of result.rows as Array<{
     id: number;
     title: string;
-    description: string | null;
     event_type: EventType;
     scheduled_at: Date;
     completed: boolean;
     created_by: string | null;
-  }[];
-
-  let sentCount = 0;
-
-  for (const row of rows) {
+  }>) {
     const scheduledAt = new Date(row.scheduled_at);
-
     const minutesDiff = differenceInMinutes(scheduledAt, now);
-
-    const showDoneButton = row.completed === false;
     const createdBy = row.created_by ?? "unknown";
+    const showDoneButton = row.completed === false;
 
-    // BEFORE reminders
-    if (isWithinMinuteWindow(minutesDiff, 72 * 60)) {
-      if (await markIfNotSent(row.id, "before_3d")) {
-        await sendSlackMessage(
-          buildReminderMessage(row.event_type, row.title, scheduledAt, minutesDiff),
-          [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: buildReminderMessage(
-                  row.event_type,
-                  row.title,
-                  scheduledAt,
-                  minutesDiff
-                ),
-              },
-            },
-            {
-              type: "section",
-              fields: [
-                {
-                  type: "mrkdwn",
-                  text: `*Title:*\n${row.title}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*When:*\n${eventDateString(scheduledAt)}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Created by:*\n${createdBy}`,
-                },
-              ],
-            },
-            ...(showDoneButton
-              ? [
-                  {
-                    type: "actions",
-                    elements: [
-                      {
-                        type: "button",
-                        text: { type: "plain_text", text: "Mark as done" },
-                        style: "primary",
-                        action_id: "mark_done",
-                        value: String(row.id),
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ]
-        );
-        sentCount += 1;
+    let handled = false;
+
+    for (const stage of beforeStages) {
+      if (!isWithinMinuteWindow(minutesDiff, stage.targetMinutes)) continue;
+      if (!(await markIfNotSent(row.id, stage.kind))) {
+        handled = true;
+        break;
       }
-      continue;
+
+      await sendEventNotification({
+        eventId: row.id,
+        title: row.title,
+        createdBy,
+        scheduledAt,
+        messageText: buildReminderMessage(
+          row.event_type,
+          row.title,
+          scheduledAt,
+          stage.targetMinutes === 0 ? 0 : minutesDiff
+        ),
+        showDoneButton,
+        scheduleLabel: "When",
+      });
+
+      sentCount += 1;
+      handled = true;
+      break;
     }
+    if (handled) continue;
 
-    if (isWithinMinuteWindow(minutesDiff, 24 * 60)) {
-      if (await markIfNotSent(row.id, "before_24h")) {
-        await sendSlackMessage(
-          buildReminderMessage(row.event_type, row.title, scheduledAt, minutesDiff),
-          [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: buildReminderMessage(
-                  row.event_type,
-                  row.title,
-                  scheduledAt,
-                  minutesDiff
-                ),
-              },
-            },
-            {
-              type: "section",
-              fields: [
-                {
-                  type: "mrkdwn",
-                  text: `*Title:*\n${row.title}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*When:*\n${eventDateString(scheduledAt)}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Created by:*\n${createdBy}`,
-                },
-              ],
-            },
-            ...(showDoneButton
-              ? [
-                  {
-                    type: "actions",
-                    elements: [
-                      {
-                        type: "button",
-                        text: { type: "plain_text", text: "Mark as done" },
-                        style: "primary",
-                        action_id: "mark_done",
-                        value: String(row.id),
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ]
-        );
-        sentCount += 1;
+    for (const stage of missedStages) {
+      if (!isWithinMinuteWindow(minutesDiff, stage.targetMinutes)) continue;
+      if (!(await markIfNotSent(row.id, stage.kind))) {
+        handled = true;
+        break;
       }
-      continue;
-    }
 
-    if (isWithinMinuteWindow(minutesDiff, 3 * 60)) {
-      if (await markIfNotSent(row.id, "before_3h")) {
-        await sendSlackMessage(
-          buildReminderMessage(row.event_type, row.title, scheduledAt, minutesDiff),
-          [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: buildReminderMessage(
-                  row.event_type,
-                  row.title,
-                  scheduledAt,
-                  minutesDiff
-                ),
-              },
-            },
-            {
-              type: "section",
-              fields: [
-                {
-                  type: "mrkdwn",
-                  text: `*Title:*\n${row.title}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*When:*\n${eventDateString(scheduledAt)}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Created by:*\n${createdBy}`,
-                },
-              ],
-            },
-            ...(showDoneButton
-              ? [
-                  {
-                    type: "actions",
-                    elements: [
-                      {
-                        type: "button",
-                        text: { type: "plain_text", text: "Mark as done" },
-                        style: "primary",
-                        action_id: "mark_done",
-                        value: String(row.id),
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ]
-        );
-        sentCount += 1;
-      }
-      continue;
-    }
+      await sendEventNotification({
+        eventId: row.id,
+        title: row.title,
+        createdBy,
+        scheduledAt,
+        messageText: buildUrgentMessage(row.event_type, row.title, scheduledAt),
+        showDoneButton,
+        scheduleLabel: "Scheduled",
+      });
 
-    if (isWithinMinuteWindow(minutesDiff, 15)) {
-      if (await markIfNotSent(row.id, "before_15m")) {
-        await sendSlackMessage(
-          buildReminderMessage(row.event_type, row.title, scheduledAt, minutesDiff),
-          [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: buildReminderMessage(
-                  row.event_type,
-                  row.title,
-                  scheduledAt,
-                  minutesDiff
-                ),
-              },
-            },
-            {
-              type: "section",
-              fields: [
-                {
-                  type: "mrkdwn",
-                  text: `*Title:*\n${row.title}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*When:*\n${eventDateString(scheduledAt)}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Created by:*\n${createdBy}`,
-                },
-              ],
-            },
-            ...(showDoneButton
-              ? [
-                  {
-                    type: "actions",
-                    elements: [
-                      {
-                        type: "button",
-                        text: { type: "plain_text", text: "Mark as done" },
-                        style: "primary",
-                        action_id: "mark_done",
-                        value: String(row.id),
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ]
-        );
-        sentCount += 1;
-      }
-      continue;
-    }
-
-    // EXACT schedule time
-    if (isWithinMinuteWindow(minutesDiff, 0)) {
-      if (await markIfNotSent(row.id, "at_time")) {
-        await sendSlackMessage(
-          buildReminderMessage(row.event_type, row.title, scheduledAt, 0),
-          [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: buildReminderMessage(
-                  row.event_type,
-                  row.title,
-                  scheduledAt,
-                  0
-                ),
-              },
-            },
-            {
-              type: "section",
-              fields: [
-                {
-                  type: "mrkdwn",
-                  text: `*Title:*\n${row.title}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*When:*\n${eventDateString(scheduledAt)}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Created by:*\n${createdBy}`,
-                },
-              ],
-            },
-            ...(showDoneButton
-              ? [
-                  {
-                    type: "actions",
-                    elements: [
-                      {
-                        type: "button",
-                        text: { type: "plain_text", text: "Mark as done" },
-                        style: "primary",
-                        action_id: "mark_done",
-                        value: String(row.id),
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ]
-        );
-        sentCount += 1;
-      }
-      continue;
-    }
-
-    // MISSED follow-ups (after schedule)
-    if (isWithinMinuteWindow(minutesDiff, -10)) {
-      if (await markIfNotSent(row.id, "missed_10m")) {
-        await sendSlackMessage(
-          buildUrgentMessage(row.event_type, row.title, scheduledAt),
-          [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: buildUrgentMessage(row.event_type, row.title, scheduledAt),
-              },
-            },
-            {
-              type: "section",
-              fields: [
-                {
-                  type: "mrkdwn",
-                  text: `*Title:*\n${row.title}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Scheduled:*\n${eventDateString(scheduledAt)}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Created by:*\n${createdBy}`,
-                },
-              ],
-            },
-            ...(showDoneButton
-              ? [
-                  {
-                    type: "actions",
-                    elements: [
-                      {
-                        type: "button",
-                        text: { type: "plain_text", text: "Mark as done" },
-                        style: "primary",
-                        action_id: "mark_done",
-                        value: String(row.id),
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ]
-        );
-        sentCount += 1;
-      }
-      continue;
-    }
-
-    if (isWithinMinuteWindow(minutesDiff, -60)) {
-      if (await markIfNotSent(row.id, "missed_1h")) {
-        await sendSlackMessage(
-          buildUrgentMessage(row.event_type, row.title, scheduledAt),
-          [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: buildUrgentMessage(row.event_type, row.title, scheduledAt),
-              },
-            },
-            {
-              type: "section",
-              fields: [
-                {
-                  type: "mrkdwn",
-                  text: `*Title:*\n${row.title}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Scheduled:*\n${eventDateString(scheduledAt)}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Created by:*\n${createdBy}`,
-                },
-              ],
-            },
-            ...(showDoneButton
-              ? [
-                  {
-                    type: "actions",
-                    elements: [
-                      {
-                        type: "button",
-                        text: { type: "plain_text", text: "Mark as done" },
-                        style: "primary",
-                        action_id: "mark_done",
-                        value: String(row.id),
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ]
-        );
-        sentCount += 1;
-      }
-      continue;
-    }
-
-    if (isWithinMinuteWindow(minutesDiff, -24 * 60)) {
-      if (await markIfNotSent(row.id, "missed_24h")) {
-        await sendSlackMessage(
-          buildUrgentMessage(row.event_type, row.title, scheduledAt),
-          [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: buildUrgentMessage(row.event_type, row.title, scheduledAt),
-              },
-            },
-            {
-              type: "section",
-              fields: [
-                {
-                  type: "mrkdwn",
-                  text: `*Title:*\n${row.title}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Scheduled:*\n${eventDateString(scheduledAt)}`,
-                },
-                {
-                  type: "mrkdwn",
-                  text: `*Created by:*\n${createdBy}`,
-                },
-              ],
-            },
-            ...(showDoneButton
-              ? [
-                  {
-                    type: "actions",
-                    elements: [
-                      {
-                        type: "button",
-                        text: { type: "plain_text", text: "Mark as done" },
-                        style: "primary",
-                        action_id: "mark_done",
-                        value: String(row.id),
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ]
-        );
-        sentCount += 1;
-      }
-      continue;
+      sentCount += 1;
+      handled = true;
+      break;
     }
   }
 

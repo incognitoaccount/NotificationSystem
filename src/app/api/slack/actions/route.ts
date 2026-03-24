@@ -77,30 +77,74 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Missing action" }, { status: 400 });
   }
 
-  if (action.action_id !== "mark_done") {
-    console.log("[Slack Actions] Unknown action_id", action.action_id);
-    return NextResponse.json({ ok: false, error: "Unknown action" }, { status: 400 });
-  }
-
   const eventId = Number(action.value);
   if (!Number.isInteger(eventId)) {
     console.log("[Slack Actions] Invalid event id", { value: action.value });
     return NextResponse.json({ ok: false, error: "Invalid event id" }, { status: 400 });
   }
 
-  const updateRes = await pool.query(
-    "UPDATE events SET completed = TRUE WHERE id = $1",
-    [eventId]
-  );
-  console.log("[Slack Actions] Mark done result", {
-    eventId,
-    updatedRows: updateRes.rowCount,
-  });
+  if (action.action_id === "mark_done") {
+    const updateRes = await pool.query(
+      "UPDATE events SET completed = TRUE WHERE id = $1",
+      [eventId]
+    );
+    console.log("[Slack Actions] Mark done result", {
+      eventId,
+      updatedRows: updateRes.rowCount,
+    });
 
-  return NextResponse.json({
-    ok: true,
-    text: "Marked as done.",
-    response_type: "ephemeral",
-  });
+    return NextResponse.json({
+      ok: true,
+      text: "Marked as done.",
+      response_type: "ephemeral",
+    });
+  }
+
+  if (
+    action.action_id === "snooze_10m" ||
+    action.action_id === "snooze_1h" ||
+    action.action_id === "snooze_tomorrow"
+  ) {
+    // Keep this migration here so the action endpoint works even if
+    // `db/init.sql` has not been re-run yet in production.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS snoozed_notifications (
+        id SERIAL PRIMARY KEY,
+        event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        remind_at TIMESTAMPTZ NOT NULL,
+        sent_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    const minutesToAdd =
+      action.action_id === "snooze_10m"
+        ? 10
+        : action.action_id === "snooze_1h"
+          ? 60
+          : 24 * 60;
+    const remindAt = new Date(Date.now() + minutesToAdd * 60 * 1000);
+
+    await pool.query(
+      "INSERT INTO snoozed_notifications (event_id, remind_at) VALUES ($1, $2)",
+      [eventId, remindAt]
+    );
+
+    const humanLabel =
+      action.action_id === "snooze_10m"
+        ? "10 minutes"
+        : action.action_id === "snooze_1h"
+          ? "1 hour"
+          : "tomorrow";
+
+    return NextResponse.json({
+      ok: true,
+      text: `Snoozed. I will remind you again in ${humanLabel}.`,
+      response_type: "ephemeral",
+    });
+  }
+
+  console.log("[Slack Actions] Unknown action_id", action.action_id);
+  return NextResponse.json({ ok: false, error: "Unknown action" }, { status: 400 });
 }
 
