@@ -11,6 +11,19 @@ import { requireUser } from "@/lib/auth";
 export async function GET() {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Keep this migration guard so GET does not fail in environments
+  // where the newest SQL script has not been executed yet.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS snoozed_notifications (
+      id SERIAL PRIMARY KEY,
+      event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      remind_at TIMESTAMPTZ NOT NULL,
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   // We fetch all events ordered by scheduled_at so that the UI
   // can easily group them on the Kanban board.
   const result = await pool.query(
@@ -21,7 +34,13 @@ export async function GET() {
        e.event_type,
        e.scheduled_at,
        e.completed,
-       u.username AS created_by
+       u.username AS created_by,
+       (
+         SELECT MAX(s.remind_at)
+         FROM snoozed_notifications s
+         WHERE s.event_id = e.id
+           AND s.sent_at IS NULL
+       ) AS snoozed_until
      FROM events e
      LEFT JOIN users u ON u.id = e.user_id
      ORDER BY e.scheduled_at ASC`,

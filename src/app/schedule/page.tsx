@@ -31,6 +31,7 @@ interface Event {
   scheduled_at: string;
   completed: boolean;
   created_by: string | null;
+  snoozed_until?: string | null;
 }
 
 const columnConfig: Record<
@@ -497,6 +498,14 @@ export default function SchedulePage() {
                         columnEvents.map((event) => {
                           const dateObj = new Date(event.scheduled_at);
                           const past = isPast(dateObj);
+                          const snoozedUntil = event.snoozed_until
+                            ? new Date(event.snoozed_until)
+                            : null;
+                          const isSnoozedActive =
+                            !event.completed &&
+                            snoozedUntil !== null &&
+                            !Number.isNaN(snoozedUntil.getTime()) &&
+                            snoozedUntil.getTime() > Date.now();
 
                           return (
                             <div
@@ -555,6 +564,10 @@ export default function SchedulePage() {
                                     <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider border border-emerald-200">
                                       Done
                                     </span>
+                                  ) : isSnoozedActive ? (
+                                    <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-200">
+                                      Snoozed
+                                    </span>
                                   ) : past ? (
                                     <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-wider border border-rose-200">
                                       Missed
@@ -568,6 +581,12 @@ export default function SchedulePage() {
                                   )}
                                 </div>
                               </div>
+
+                              {isSnoozedActive && snoozedUntil && (
+                                <p className="text-[11px] text-amber-700 mb-2">
+                                  Snoozed until {format(snoozedUntil, "MMM d, yyyy h:mm a")}
+                                </p>
+                              )}
 
                               {confirmDeleteId === event.id && (
                                 <div className="mt-3 pt-3 border-t border-rose-100 flex items-center justify-between gap-3">
